@@ -1,5 +1,6 @@
 # cert_issuer_service/app.py
-from fastapi import FastAPI, Depends, Header, HTTPException 
+import hmac
+from fastapi import FastAPI, Depends, Header, HTTPException
 from fastapi.responses import JSONResponse
 from sqlmodel import Session
 from .settings import get_settings, Settings
@@ -11,13 +12,21 @@ from .service import create_custodial_wallet, export_wallet_keystore, prepare_is
 
 app = FastAPI(title="Certificate Issuer Service", version="2.0.0")
 
+@app.exception_handler(ValueError)
+def value_error_handler(request, exc: ValueError):
+    # Bad input (missing wallet, invalid PDF, etc.) is the caller's error, not a server crash.
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
 @app.on_event("startup")
 def startup():
     init_db()
 
 def require_api_key(x_api_key: str | None = Header(default=None),
                     settings: Settings = Depends(get_settings)):
-    if settings.api_key and x_api_key != settings.api_key:
+    # Fail closed: refuse every request if the server has no API key configured.
+    if not settings.api_key:
+        raise HTTPException(status_code=503, detail="Server API key not configured")
+    if not x_api_key or not hmac.compare_digest(x_api_key, settings.api_key):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
     return True
 
@@ -45,14 +54,14 @@ def prepare_issue_route(req: PrepareIssueRequest,
                         _=Depends(require_api_key),
                         session: Session = Depends(get_session),
                         settings: Settings = Depends(get_settings)):
-    ipfs_url = str(req.ipfs_api_url or settings.ipfs_api_url)
+    # The IPFS endpoint comes from server config only, never from the request (prevents SSRF).
+    ipfs_url = str(settings.ipfs_api_url)
     out = prepare_issue(
         session,
         holder_name=req.holder_name,
         degree_name=req.degree_name,
         issued_date=req.issued_date,
         issuer_id=req.issuer_id,
-        pdf_path=req.pdf_path,
         pdf_b64=req.pdf_b64,
         ipfs_api_url=ipfs_url,
         wallet_mode=req.wallet_mode,

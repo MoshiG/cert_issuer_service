@@ -18,9 +18,7 @@ class PrepareIssueRequest(BaseModel):
     degree_name: str
     issued_date: str
     issuer_id: str
-    pdf_b64: Optional[str] = None
-    pdf_path: Optional[str] = None
-    ipfs_api_url: Optional[HttpUrl] = None
+    pdf_b64: str = Field(min_length=1)
     wallet_mode: WalletMode = "provided"
     holder_address: Optional[constr(pattern=r"^0x[a-fA-F0-9]{40}$")] = None
     keystore_password: Optional[str] = None

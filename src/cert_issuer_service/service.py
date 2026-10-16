@@ -10,14 +10,12 @@ from .ipfs import add_bytes
 from .models_db import Wallet, Certificate
 from .settings import get_settings
 
-def _decode_pdf(pdf_path: str | None, pdf_b64: str | None) -> tuple[bytes, str]:
-    if pdf_b64:
-        return base64.b64decode(pdf_b64, validate=True), "certificate.pdf"
-    if pdf_path:
-        from pathlib import Path
-        p = Path(pdf_path).expanduser().resolve()
-        return p.read_bytes(), p.name
-    raise ValueError("Provide either pdf_b64 or pdf_path")
+def _decode_pdf(pdf_b64: str) -> tuple[bytes, str]:
+    # PDFs arrive only as base64 in the request body; the API never reads server-side paths.
+    data = base64.b64decode(pdf_b64, validate=True)
+    if not data.startswith(b"%PDF-"):
+        raise ValueError("pdf_b64 is not a PDF")
+    return data, "certificate.pdf"
 
 def create_custodial_wallet(session: Session, student_ref: str | None = None) -> str:
     kms = get_kms()
@@ -67,7 +65,7 @@ def canonicalize_and_hash_manifest(manifest: Dict) -> tuple[bytes, str]:
 
 def prepare_issue(session: Session, *,
                   holder_name: str, degree_name: str, issued_date: str, issuer_id: str,
-                  pdf_path: str | None, pdf_b64: str | None,
+                  pdf_b64: str,
                   ipfs_api_url: str, wallet_mode: str,
                   holder_address: str | None, keystore_password: str | None,
                   external_url_base: str | None) -> Dict:
@@ -89,8 +87,7 @@ def prepare_issue(session: Session, *,
     ulid_str, _token_int, token_id_str = build_ulid_token()
 
     # 3) PDF → CID + sha256
-    pdf_bytes, pdf_name = _decode_pdf(pdf_path, pdf_b64)
-    from .ipfs import add_bytes
+    pdf_bytes, pdf_name = _decode_pdf(pdf_b64)
     pdf_cid = add_bytes(pdf_name, pdf_bytes, ipfs_api_url, pin=True)
     pdf_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
 
