@@ -55,8 +55,6 @@ coverage.xml
 *.bak
 *.tmp
 
-# Poetry
-poetry.lock
 
 # IPFS cache (if any)
 .ipfs/
